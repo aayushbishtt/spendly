@@ -5,11 +5,20 @@ from datetime import date
 from werkzeug.security import generate_password_hash
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "expense_tracker.db")
+DEFAULT_DB_PATH = os.path.join(BASE_DIR, "expense_tracker.db")
+
+
+def get_db_path():
+    """Return the SQLite file path.
+
+    Reads the environment on every call so the test suite can point the
+    whole app at a throwaway database without touching the real one.
+    """
+    return os.environ.get("SPENDLY_DB_PATH", DEFAULT_DB_PATH)
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(get_db_path())
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -78,5 +87,38 @@ def seed_db():
                 (user_id, amount, category, expense_date, description),
             )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_by_email(email):
+    """Return the user row matching this email, or None."""
+    conn = get_db()
+    try:
+        return conn.execute(
+            """
+            SELECT id, name, email, password_hash, created_at
+            FROM users
+            WHERE email = ?
+            """,
+            (email,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+
+def create_user(name, email, password_hash):
+    """Insert a new user and return the new row id.
+
+    Raises sqlite3.IntegrityError if the email is already taken.
+    """
+    conn = get_db()
+    try:
+        cursor = conn.execute(
+            "INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)",
+            (name, email, password_hash),
+        )
+        conn.commit()
+        return cursor.lastrowid
     finally:
         conn.close()
